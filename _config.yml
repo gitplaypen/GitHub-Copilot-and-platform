@@ -2,11 +2,11 @@ title: GitHub - Innovate with GitHub
 description: This lab guides you through a series of practical exercises focused on modernising Zava's business applications and databases by migrating everything to Azure, leveraging GitHub Enterprise, Copilot, and Azure services.
 theme: just-the-docs
 
-# url: https://microsoft.github.io/TechWorkshop-L300-GitHub-Copilot-and-platform/
+# url: https://github.com/microsoft/TechWorkshop-L300-GitHub-Copilot-and-platform
 
 aux_links:
-  "TechWorkshop L300: GitHub - Innovate with GitHub": 
-    - "https://microsoft.github.io/TechWorkshop-L300-GitHub-Copilot-and-platform/"
+  "TechWorkshop L300: GitHub - Innovate with GitHub":
+    - "https://github.com/microsoft/TechWorkshop-L300-GitHub-Copilot-and-platform"
 callouts_level: quiet # or loud
 callouts:
   highlight:
@@ -18,7 +18,7 @@ callouts:
     title: New
     color: green
   note:
-    title: Note 
+    title: Note
     color: purple
   warning:
     title: Warning
