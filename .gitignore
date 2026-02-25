@@ -94,9 +94,10 @@ htmlcov/
 *.log
 logs/
 
-# Secrets / env files
+# Secrets / env files - NEVER commit these
 .env
 .env.*
+!.env.example
 secrets.json
 *.pem
 *.key
