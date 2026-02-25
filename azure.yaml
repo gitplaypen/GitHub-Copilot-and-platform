@@ -1,0 +1,16 @@
+# Azure Developer CLI (AZD) configuration
+# https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/azd-schema
+name: zava-storefront
+metadata:
+  template: zava-storefront@0.0.1-beta
+
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+services:
+  web:
+    project: ./src
+    language: dotnet
+    host: appservice

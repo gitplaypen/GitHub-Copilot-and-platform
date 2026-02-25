@@ -1,0 +1,27 @@
+## Git
+.git
+.gitignore
+
+## Build artifacts
+bin/
+obj/
+*.user
+
+## Visual Studio
+.vs/
+*.suo
+
+## AZD / Azure
+.azure/
+next-step.md
+
+## Docs & media
+docs/
+media/
+
+## Node / frontend (if any)
+node_modules/
+npm-debug.log
+
+## Test results
+TestResults/
