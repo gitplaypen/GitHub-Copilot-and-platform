@@ -783,9 +783,8 @@
               },
               "properties": {
                 "model": {
-                  "format": "OpenAI",
-                  "name": "Phi-4-mini-instruct",
-                  "version": "1"
+                  "format": "Microsoft",
+                  "name": "Phi-4-mini-instruct"
                 },
                 "raiPolicyName": "Microsoft.Default"
               },
