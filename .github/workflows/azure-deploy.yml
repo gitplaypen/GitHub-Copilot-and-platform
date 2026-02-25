@@ -9,6 +9,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}.azurecr.io
   IMAGE_NAME: zavastorefront
