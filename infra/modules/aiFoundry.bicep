@@ -55,19 +55,28 @@ resource gpt4oDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-
     model: {
       format: 'OpenAI'
       name: 'gpt-4o'
-      version: '2024-08-06'
+      version: '2024-11-20'
     }
     raiPolicyName: 'Microsoft.Default'
   }
 }
 
-// Phi models require deployment via Azure AI Studio or Managed Compute
-// They are not available in the OpenAI format for standard Cognitive Services deployments
-// To add Phi models:
-// 1. Go to Azure AI Studio (ai.azure.com)
-// 2. Navigate to Model Catalog → Phi models
-// 3. Deploy as a Managed Compute endpoint
-// Or use Azure Machine Learning workspace for serverless deployment
+// Phi-4-mini-instruct Model Deployment (Azure AI Model-as-a-Service)
+resource phi4Deployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+  parent: aiFoundry
+  name: 'Phi-4-mini-instruct'
+  sku: {
+    name: 'GlobalStandard'
+    capacity: 1
+  }
+  properties: {
+    model: {
+      format: 'Microsoft'
+      name: 'Phi-4-mini-instruct'
+    }
+    raiPolicyName: 'Microsoft.Default'
+  }
+}
 
 // Cognitive Services OpenAI User role assignment for managed identity
 resource openAIUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
