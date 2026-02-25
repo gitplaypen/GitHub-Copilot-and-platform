@@ -9,14 +9,29 @@ on:
     branches: [ '*' ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}.azurecr.io
   IMAGE_NAME: zavastorefront
   APP_NAME: ${{ vars.AZURE_APP_SERVICE_NAME }}
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} ./src
+
   build-and-deploy:
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Checkout code
