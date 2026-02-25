@@ -1,6 +1,6 @@
 # ============================================================================
 # ZavaStorefront Dockerfile
-# Multi-stage build for ASP.NET Core 6.0 application
+# Multi-stage build for ASP.NET Core 8.0 application
 # 
 # NOTE: This Dockerfile is designed to be built using:
 #   - Azure Container Registry Tasks (az acr build)
@@ -9,7 +9,7 @@
 # ============================================================================
 
 # Stage 1: Build
-FROM mcr.microsoft.com/dotnet/sdk:6.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
 # Copy project files and restore dependencies
@@ -27,7 +27,7 @@ FROM build AS publish
 RUN dotnet publish "ZavaStorefront.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 # Stage 3: Runtime
-FROM mcr.microsoft.com/dotnet/aspnet:6.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 
 # Expose port 8080 (Azure App Service default)
