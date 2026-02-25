@@ -1,0 +1,83 @@
+# Build and Deploy to Azure App Service
+name: Build and Deploy to Azure App Service
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'src/**' ]
+  pull_request:
+    branches: [ '*' ]
+  workflow_dispatch:
+
+# Explicit minimal permissions (principle of least privilege)
+permissions:
+  contents: read
+  id-token: write   # Required when switching to OIDC authentication
+
+env:
+  REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}.azurecr.io
+  IMAGE_NAME: zavastorefront
+  APP_NAME: ${{ vars.AZURE_APP_SERVICE_NAME }}
+
+jobs:
+  # ── Build ──────────────────────────────────────────────────────────────────
+  # Runs on every push and pull_request to validate the build.
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Log in to Azure Container Registry
+        run: az acr login --name ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            ./src
+
+  # ── Deploy ─────────────────────────────────────────────────────────────────
+  # Runs only on push to main (not on pull requests).
+  # Pushes the image to ACR and updates the App Service.
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    # Guard: only deploy when a commit lands on main, never on PRs
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Log in to Azure Container Registry
+        run: az acr login --name ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}
+
+      - name: Build and push Docker image
+        run: |
+          # Build with both a unique SHA tag and a rolling 'latest' tag
+          docker build \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            ./src
+
+          # Push both tags to the registry
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.APP_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
