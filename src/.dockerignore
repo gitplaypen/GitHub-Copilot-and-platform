@@ -1,0 +1,59 @@
+# Build artifacts
+bin/
+obj/
+out/
+
+# .NET artifacts
+*.dll
+*.pdb
+*.exe
+
+# User-specific files
+*.user
+*.userosscache
+*.suo
+
+# NuGet
+*.nupkg
+.nuget/
+packages/
+
+# IDE
+.vs/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Test results
+TestResults/
+
+# Secrets (never include in container)
+appsettings.Development.json
+appsettings.Local.json
+secrets.json
+*.pfx
+*.key
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Azure/AZD
+.azure/
+azure.yaml
+infra/
+
+# OS files
+.DS_Store
+Thumbs.db
