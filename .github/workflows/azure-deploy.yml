@@ -1,138 +1,46 @@
-# Azure Deployment with OIDC Authentication
-name: Deploy to Azure
+# Build and Deploy to Azure App Service
+name: Build and Deploy to Azure App Service
 
 on:
   push:
-    branches: ["main"]
-    paths:
-      - 'src/**'
-      - 'infra/**'
-      - '.github/workflows/azure-deploy.yml'
+    branches: [ main ]
+    paths: [ 'src/**' ]
   pull_request:
-    branches: ["main"]
-    paths:
-      - 'src/**'
-      - 'infra/**'
-      - '.github/workflows/azure-deploy.yml'
+    branches: [ '*' ]
   workflow_dispatch:
 
-permissions:
-  id-token: write   # Required for OIDC token request
-  contents: read
-
 env:
-  AZURE_RESOURCEGROUP_NAME: 'rg-zavastorefront'
-  AZURE_LOCATION: 'eastus'
+  REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}.azurecr.io
+  IMAGE_NAME: zavastorefront
+  APP_NAME: ${{ vars.AZURE_APP_SERVICE_NAME }}
 
 jobs:
-  deploy-infrastructure:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    environment: production
-    outputs:
-      appServiceName: ${{ steps.deploy.outputs.appServiceName }}
-      acrName: ${{ steps.deploy.outputs.acrName }}
-      resourceGroupName: ${{ steps.deploy.outputs.resourceGroupName }}
-    
+
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Azure Login using OIDC
+      - name: Log in to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy Infrastructure (Bicep)
-        id: deploy
+      - name: Log in to Azure Container Registry
+        run: az acr login --name ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}
+
+      - name: Build and push Docker image
         run: |
-          # Deploy at subscription scope (Bicep has targetScope = 'subscription')
-          DEPLOYMENT_OUTPUT=$(az deployment sub create \
-            --location ${{ env.AZURE_LOCATION }} \
-            --template-file ./infra/main.bicep \
-            --parameters environmentName=prod location=${{ env.AZURE_LOCATION }} \
-            --query 'properties.outputs' \
-            --output json)
-          
-          # Extract outputs for downstream jobs (match Bicep output names)
-          APP_SERVICE_NAME=$(echo $DEPLOYMENT_OUTPUT | jq -r '.AZURE_APP_SERVICE_NAME.value // empty')
-          ACR_NAME=$(echo $DEPLOYMENT_OUTPUT | jq -r '.AZURE_CONTAINER_REGISTRY_NAME.value // empty')
-          RG_NAME=$(echo $DEPLOYMENT_OUTPUT | jq -r '.AZURE_RESOURCE_GROUP.value // empty')
-          
-          echo "appServiceName=$APP_SERVICE_NAME" >> $GITHUB_OUTPUT
-          echo "acrName=$ACR_NAME" >> $GITHUB_OUTPUT
-          echo "resourceGroupName=$RG_NAME" >> $GITHUB_OUTPUT
+          # Build the Docker image
+          docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ./src
 
-  build-and-deploy-app:
-    needs: deploy-infrastructure
-    runs-on: ubuntu-latest
-    environment: production
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+          # Push both tags to registry
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-      - name: Azure Login using OIDC
-        uses: azure/login@v2
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Build and Push Container Image
-        if: ${{ needs.deploy-infrastructure.outputs.acrName != '' }}
-        run: |
-          ACR_NAME="${{ needs.deploy-infrastructure.outputs.acrName }}"
-          
-          # Build using ACR Tasks (no local Docker required)
-          az acr build \
-            --registry $ACR_NAME \
-            --image zavastorefront:${{ github.sha }} \
-            --image zavastorefront:latest \
-            ./src
-
-      - name: Deploy to App Service
-        if: ${{ needs.deploy-infrastructure.outputs.appServiceName != '' }}
-        run: |
-          APP_NAME="${{ needs.deploy-infrastructure.outputs.appServiceName }}"
-          ACR_NAME="${{ needs.deploy-infrastructure.outputs.acrName }}"
-          
-          # Configure App Service to use ACR image
-          RG_NAME="${{ needs.deploy-infrastructure.outputs.resourceGroupName }}"
-          
-          az webapp config container set \
-            --name $APP_NAME \
-            --resource-group $RG_NAME \
-            --container-image-name $ACR_NAME.azurecr.io/zavastorefront:${{ github.sha }}
-          
-          # Restart to apply changes
-          az webapp restart \
-            --name $APP_NAME \
-            --resource-group $RG_NAME
-
-      - name: Verify Deployment
-        run: |
-          APP_NAME="${{ needs.deploy-infrastructure.outputs.appServiceName }}"
-          RG_NAME="${{ needs.deploy-infrastructure.outputs.resourceGroupName }}"
-          
-          # Get the app URL and wait for it to be ready
-          APP_URL=$(az webapp show \
-            --name $APP_NAME \
-            --resource-group $RG_NAME \
-            --query 'defaultHostName' \
-            --output tsv)
-          
-          echo "Application deployed to: https://$APP_URL"
-          
-          # Wait for app to be responsive
-          for i in {1..10}; do
-            if curl -s --max-time 10 "https://$APP_URL" > /dev/null; then
-              echo "Application is responding!"
-              exit 0
-            fi
-            echo "Waiting for application to be ready... (attempt $i/10)"
-            sleep 15
-          done
-          
-          echo "Warning: Application may still be starting up"
+          app-name: ${{ env.APP_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
