@@ -15,6 +15,7 @@ WORKDIR /app
 COPY --from=build /out ./
 
 ENV ASPNETCORE_URLS=http://+:80
+ENV ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
 EXPOSE 80
 
 ENTRYPOINT ["dotnet", "ZavaStorefront.dll"]

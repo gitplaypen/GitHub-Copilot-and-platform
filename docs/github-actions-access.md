@@ -14,32 +14,45 @@ This document explains how to configure GitHub so that the ACR deployment workfl
 
 ---
 
-## 2. Configure Required Secrets
+## 2. Configure Required Secrets and Variables
 
-The `deploy-to-acr.yml` workflow reads four secrets. Add them at **Settings** → **Secrets and variables** → **Actions** → **Secrets** tab.
+The `deploy-to-acr.yml` workflow reads one secret and two non-sensitive configuration values.
+
+Add the secret at **Settings** → **Secrets and variables** → **Actions** → **Secrets** tab:
 
 | Secret name | Value |
 |---|---|
 | `AZURE_CREDENTIALS` | JSON output from `az ad sp create-for-rbac` (see below) |
-| `ACR_NAME` | Short name of your Azure Container Registry, e.g. `myregistry` |
-| `ACR_LOGIN_SERVER` | Full login server, e.g. `myregistry.azurecr.io` |
-| `IMAGE_NAME` | Docker image name to push, e.g. `zava-storefront` |
 
 > **Important:** Never paste secret values into workflow YAML files or commit them to source control. Always use `${{ secrets.SECRET_NAME }}` references.
 
+Add the following non-sensitive configuration values as GitHub Actions **Variables** at **Settings** → **Secrets and variables** → **Actions** → **Variables** tab:
+
+| Variable name | Value |
+|---|---|
+| `ACR_NAME` | Short name of your Azure Container Registry, e.g. `myregistry` |
+| `IMAGE_NAME` | Docker image name to push, e.g. `zava-storefront` |
+
+> The full ACR login server (`ACR_NAME.azurecr.io`) is constructed automatically by the workflow from `ACR_NAME`, so you do not need to store it separately.
+
 ### Creating the Azure service principal
+
+Create a service principal scoped directly to your ACR with only the `AcrPush` role — this limits blast radius if credentials are ever compromised:
 
 ```bash
 az ad sp create-for-rbac \
   --name "github-actions-sp" \
-  --role contributor \
-  --scopes /subscriptions/{subscription-id}/resourceGroups/{resource-group-name} \
-  --json-auth
+  --role AcrPush \
+  --scopes /subscriptions/{subscription-id}/resourceGroups/{resource-group-name}/providers/Microsoft.ContainerRegistry/registries/{acr-name}
 ```
 
 Copy the entire JSON output and save it as the `AZURE_CREDENTIALS` secret.
 
-### Granting AcrPush permission to the service principal
+> **Note:** Prefer the OIDC approach in section 4 over long-lived service principal credentials where possible.
+
+### Granting AcrPush permission to an existing service principal
+
+If you have an existing service principal that was created without the `AcrPush` role, assign it separately:
 
 ```bash
 az role assignment create \
