@@ -1,0 +1,138 @@
+# Azure Deployment with OIDC Authentication
+name: Deploy to Azure
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - 'src/**'
+      - 'infra/**'
+      - '.github/workflows/azure-deploy.yml'
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'src/**'
+      - 'infra/**'
+      - '.github/workflows/azure-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # Required for OIDC token request
+  contents: read
+
+env:
+  AZURE_RESOURCEGROUP_NAME: 'rg-zavastorefront'
+  AZURE_LOCATION: 'eastus'
+
+jobs:
+  deploy-infrastructure:
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      appServiceName: ${{ steps.deploy.outputs.appServiceName }}
+      acrName: ${{ steps.deploy.outputs.acrName }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login using OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create Resource Group
+        run: |
+          az group create \
+            --name ${{ env.AZURE_RESOURCEGROUP_NAME }} \
+            --location ${{ env.AZURE_LOCATION }} \
+            --tags "project=zavastorefront" "environment=production"
+
+      - name: Deploy Infrastructure (Bicep)
+        id: deploy
+        run: |
+          DEPLOYMENT_OUTPUT=$(az deployment group create \
+            --resource-group ${{ env.AZURE_RESOURCEGROUP_NAME }} \
+            --template-file ./infra/main.bicep \
+            --parameters ./infra/main.parameters.json \
+            --query 'properties.outputs' \
+            --output json)
+          
+          # Extract outputs for downstream jobs
+          APP_SERVICE_NAME=$(echo $DEPLOYMENT_OUTPUT | jq -r '.appServiceName.value // empty')
+          ACR_NAME=$(echo $DEPLOYMENT_OUTPUT | jq -r '.containerRegistryName.value // empty')
+          
+          echo "appServiceName=$APP_SERVICE_NAME" >> $GITHUB_OUTPUT
+          echo "acrName=$ACR_NAME" >> $GITHUB_OUTPUT
+
+  build-and-deploy-app:
+    needs: deploy-infrastructure
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login using OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and Push Container Image
+        if: ${{ needs.deploy-infrastructure.outputs.acrName != '' }}
+        run: |
+          ACR_NAME="${{ needs.deploy-infrastructure.outputs.acrName }}"
+          
+          # Build using ACR Tasks (no local Docker required)
+          az acr build \
+            --registry $ACR_NAME \
+            --image zavastorefront:${{ github.sha }} \
+            --image zavastorefront:latest \
+            ./src
+
+      - name: Deploy to App Service
+        if: ${{ needs.deploy-infrastructure.outputs.appServiceName != '' }}
+        run: |
+          APP_NAME="${{ needs.deploy-infrastructure.outputs.appServiceName }}"
+          ACR_NAME="${{ needs.deploy-infrastructure.outputs.acrName }}"
+          
+          # Configure App Service to use ACR image
+          az webapp config container set \
+            --name $APP_NAME \
+            --resource-group ${{ env.AZURE_RESOURCEGROUP_NAME }} \
+            --container-image-name $ACR_NAME.azurecr.io/zavastorefront:${{ github.sha }}
+          
+          # Restart to apply changes
+          az webapp restart \
+            --name $APP_NAME \
+            --resource-group ${{ env.AZURE_RESOURCEGROUP_NAME }}
+
+      - name: Verify Deployment
+        run: |
+          APP_NAME="${{ needs.deploy-infrastructure.outputs.appServiceName }}"
+          
+          # Get the app URL and wait for it to be ready
+          APP_URL=$(az webapp show \
+            --name $APP_NAME \
+            --resource-group ${{ env.AZURE_RESOURCEGROUP_NAME }} \
+            --query 'defaultHostName' \
+            --output tsv)
+          
+          echo "Application deployed to: https://$APP_URL"
+          
+          # Wait for app to be responsive
+          for i in {1..10}; do
+            if curl -s --max-time 10 "https://$APP_URL" > /dev/null; then
+              echo "Application is responding!"
+              exit 0
+            fi
+            echo "Waiting for application to be ready... (attempt $i/10)"
+            sleep 15
+          done
+          
+          echo "Warning: Application may still be starting up"
