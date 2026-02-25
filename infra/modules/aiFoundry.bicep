@@ -64,7 +64,7 @@ resource gpt4oDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-
 // Phi-4-mini-instruct Model Deployment (Azure AI Model-as-a-Service)
 resource phi4Deployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   parent: aiFoundry
-  name: 'Phi-4-mini-instruct'
+  name: 'phi-4-mini-instruct'
   sku: {
     name: 'GlobalStandard'
     capacity: 1
