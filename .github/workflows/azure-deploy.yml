@@ -1,22 +1,23 @@
-# Build and Deploy to Azure App Service
 name: Build and Deploy to Azure App Service
 
 on:
   push:
     branches: [ main ]
-    paths: [ 'src/**' ]
+    paths: [ 'src/**', 'Dockerfile', '.dockerignore' ]
   pull_request:
     branches: [ '*' ]
   workflow_dispatch:
 
 env:
   REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}.azurecr.io
-  IMAGE_NAME: zavastorefront
+  IMAGE_NAME: zava-storefront
   APP_NAME: ${{ vars.AZURE_APP_SERVICE_NAME }}
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
@@ -27,17 +28,16 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Log in to Azure Container Registry
-        run: az acr login --name ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}
-
-      - name: Build and push Docker image
+      # Use 'az acr build' for cloud-side image building — no local Docker required.
+      # The build runs entirely within Azure Container Registry Tasks on an Azure-hosted agent.
+      - name: Build and push image via ACR Tasks (no local Docker needed)
         run: |
-          # Build the Docker image
-          docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ./src
-
-          # Push both tags to registry
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          az acr build \
+            --registry ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }} \
+            --image ${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --image ${{ env.IMAGE_NAME }}:latest \
+            --file Dockerfile \
+            .
 
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3

@@ -1,152 +1,126 @@
-// ============================================================================
-// ZavaStorefront Infrastructure - Main Bicep Template
-// Environment: Development (dev)
-// Region: westus3
-// ============================================================================
+targetScope = 'resourceGroup'
 
-targetScope = 'subscription'
+@description('Environment name (e.g. dev, staging, prod)')
+@allowed(['dev', 'staging', 'prod'])
+param environmentName string = 'dev'
 
-// ============================================================================
-// Parameters
-// ============================================================================
+@description('Azure region for all resources')
+param location string = 'westus3'
 
-@description('Name of the Azure environment (used for resource naming)')
-param environmentName string
+@description('Base name prefix for all resources')
+param resourcePrefix string = 'zavastore'
 
-@description('Primary location for all resources')
-param location string
+@description('Container image to deploy (defaults to a placeholder; update after first ACR push)')
+param containerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
-@description('Name of the resource group')
-param resourceGroupName string = 'rg-${environmentName}'
+// ──────────────────────────────────────────────────────
+// Derived resource names (consistent naming scheme)
+// ──────────────────────────────────────────────────────
+var acrName = replace('${resourcePrefix}acr${environmentName}', '-', '')
+var appPlanName = 'asp-${resourcePrefix}-${environmentName}'
+var appName = 'app-${resourcePrefix}-${environmentName}'
+var appInsightsName = 'ai-${resourcePrefix}-${environmentName}'
+var logAnalyticsName = 'log-${resourcePrefix}-${environmentName}'
+var aiFoundryName = 'aif-${resourcePrefix}-${environmentName}'
 
-// ============================================================================
-// Variables
-// ============================================================================
-
-// Resource token for unique naming (subscription scope)
-var resourceToken = uniqueString(subscription().id, location, environmentName)
-
-// Resource naming - format: az{prefix}{token}, max 32 chars, alphanumeric only
-var names = {
-  resourceGroup: resourceGroupName
-  managedIdentity: 'azid${resourceToken}'
-  containerRegistry: 'azacr${resourceToken}'
-  logAnalytics: 'azlog${resourceToken}'
-  appInsights: 'azappi${resourceToken}'
-  appServicePlan: 'azasp${resourceToken}'
-  appService: 'azapp${resourceToken}'
-  aiFoundry: 'azai${resourceToken}'
-}
-
-// Tags
 var tags = {
-  'azd-env-name': environmentName
-  environment: 'dev'
-  application: 'zavastorefront'
+  environment: environmentName
+  project: 'ZavaStorefront'
+  managedBy: 'AZD'
 }
 
-// ============================================================================
-// Resource Group
-// ============================================================================
-
-resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
-  name: names.resourceGroup
-  location: location
-  tags: tags
-}
-
-// ============================================================================
-// Modules
-// ============================================================================
-
-// User Assigned Managed Identity
-module identity 'modules/identity.bicep' = {
-  name: 'identity-deployment'
-  scope: rg
-  params: {
-    name: names.managedIdentity
-    location: location
-    tags: tags
-  }
-}
-
-// Azure Container Registry
-module containerRegistry 'modules/containerRegistry.bicep' = {
-  name: 'acr-deployment'
-  scope: rg
-  params: {
-    name: names.containerRegistry
-    location: location
-    tags: tags
-    managedIdentityPrincipalId: identity.outputs.principalId
-  }
-}
-
+// ──────────────────────────────────────────────────────
 // Log Analytics Workspace
+// ──────────────────────────────────────────────────────
 module logAnalytics 'modules/logAnalytics.bicep' = {
-  name: 'log-analytics-deployment'
-  scope: rg
+  name: 'logAnalytics'
   params: {
-    name: names.logAnalytics
+    name: logAnalyticsName
     location: location
     tags: tags
   }
 }
 
+// ──────────────────────────────────────────────────────
+// Azure Container Registry
+// ──────────────────────────────────────────────────────
+module acr 'modules/acr.bicep' = {
+  name: 'acr'
+  params: {
+    name: acrName
+    location: location
+    sku: 'Basic'
+    tags: tags
+  }
+}
+
+// ──────────────────────────────────────────────────────
 // Application Insights
+// ──────────────────────────────────────────────────────
 module appInsights 'modules/appInsights.bicep' = {
-  name: 'app-insights-deployment'
-  scope: rg
+  name: 'appInsights'
   params: {
-    name: names.appInsights
+    name: appInsightsName
     location: location
-    tags: tags
     logAnalyticsWorkspaceId: logAnalytics.outputs.id
+    tags: tags
   }
 }
 
-// App Service (Linux with Docker container support)
+// ──────────────────────────────────────────────────────
+// App Service Plan + Web App (Linux container)
+// ──────────────────────────────────────────────────────
 module appService 'modules/appService.bicep' = {
-  name: 'app-service-deployment'
-  scope: rg
+  name: 'appService'
   params: {
-    appServicePlanName: names.appServicePlan
-    appServiceName: names.appService
+    planName: appPlanName
+    appName: appName
     location: location
-    tags: tags
-    managedIdentityId: identity.outputs.id
-    managedIdentityClientId: identity.outputs.clientId
-    containerRegistryLoginServer: containerRegistry.outputs.loginServer
+    acrLoginServer: acr.outputs.loginServer
+    containerImage: containerImage
     appInsightsConnectionString: appInsights.outputs.connectionString
-    appInsightsInstrumentationKey: appInsights.outputs.instrumentationKey
+    skuName: 'B1'
+    tags: tags
   }
 }
 
-// Azure AI Foundry (Cognitive Services)
+// ──────────────────────────────────────────────────────
+// AcrPull role assignment: App Service managed identity → ACR
+// Built-in AcrPull role ID: 7f951dda-4ed3-4680-a7ca-43fe172d538d
+// Scoped to the ACR resource only (principle of least privilege)
+// ──────────────────────────────────────────────────────
+resource existingAcr 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+  name: acr.outputs.name
+}
+
+resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(acr.outputs.id, appService.outputs.principalId, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  scope: existingAcr
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+    principalId: appService.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// ──────────────────────────────────────────────────────
+// Azure AI Foundry (GPT-4 and Phi model access in westus3)
+// ──────────────────────────────────────────────────────
 module aiFoundry 'modules/aiFoundry.bicep' = {
-  name: 'ai-foundry-deployment'
-  scope: rg
+  name: 'aiFoundry'
   params: {
-    name: names.aiFoundry
+    name: aiFoundryName
     location: location
     tags: tags
-    managedIdentityPrincipalId: identity.outputs.principalId
   }
 }
 
-// ============================================================================
+// ──────────────────────────────────────────────────────
 // Outputs
-// ============================================================================
-
-// Required by AZD
-output RESOURCE_GROUP_ID string = rg.id
-
-// Resource information
-output AZURE_RESOURCE_GROUP string = rg.name
-output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.outputs.name
-output AZURE_CONTAINER_REGISTRY_LOGIN_SERVER string = containerRegistry.outputs.loginServer
-output AZURE_APP_SERVICE_NAME string = appService.outputs.name
-output AZURE_APP_SERVICE_URL string = appService.outputs.url
-output AZURE_APP_INSIGHTS_CONNECTION_STRING string = appInsights.outputs.connectionString
-output AZURE_AI_FOUNDRY_ENDPOINT string = aiFoundry.outputs.endpoint
-output AZURE_MANAGED_IDENTITY_CLIENT_ID string = identity.outputs.clientId
+// ──────────────────────────────────────────────────────
+output acrLoginServer string = acr.outputs.loginServer
+output acrName string = acr.outputs.name
+output appServiceName string = appService.outputs.name
+output appServiceUrl string = 'https://${appService.outputs.defaultHostName}'
+output appInsightsConnectionString string = appInsights.outputs.connectionString
+output aiFoundryName string = aiFoundry.outputs.name
