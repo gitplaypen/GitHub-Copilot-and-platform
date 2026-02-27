@@ -8,8 +8,11 @@
     "location": {
       "value": "${AZURE_LOCATION}"
     },
-    "resourceGroupName": {
-      "value": "rg-${AZURE_ENV_NAME}"
+    "resourcePrefix": {
+      "value": "zavastore"
+    },
+    "containerImage": {
+      "value": "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
     }
   }
 }

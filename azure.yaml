@@ -1,61 +1,16 @@
-# Azure Developer CLI (azd) configuration file
-# For ZavaStorefront web application - Development environment
-# 
-# Usage:
-#   azd init              - Initialize the environment (first time only)
-#   azd provision         - Provision Azure infrastructure
-#   azd deploy            - Deploy the application
-#   azd up                - Provision + Deploy in one command
-#
-# No local Docker required: Images are built using Azure Container Registry Tasks
-# or GitHub Actions, not locally.
-
-name: zavastorefront
-
+# Azure Developer CLI (AZD) configuration
+# https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/azd-schema
+name: zava-storefront
 metadata:
-  template: zavastorefront@0.0.1
+  template: zava-storefront@0.0.1-beta
 
-# Azure infrastructure configuration
 infra:
   provider: bicep
-  path: ./infra
+  path: infra
   module: main
 
-# Services to deploy
 services:
   web:
     project: ./src
     language: dotnet
     host: appservice
-    # Docker configuration - uses ACR Tasks to build (no local Docker needed)
-    docker:
-      path: ./src/Dockerfile
-      context: ./src
-      registry: acr  # Signals to use Azure Container Registry
-
-# Hooks for custom deployment logic
-hooks:
-  # Build container image using ACR Tasks (no local Docker required)
-  predeploy:
-    windows:
-      shell: pwsh
-      run: |
-        # Get the ACR name from azd environment
-        $acrName = azd env get-value AZURE_CONTAINER_REGISTRY_NAME
-        if ($acrName) {
-          Write-Host "Building image using ACR Tasks (no local Docker required)..."
-          az acr build --registry $acrName --image zavastorefront:$(azd env get-value AZURE_ENV_NAME) ./src
-        }
-    posix:
-      shell: bash
-      run: |
-        # Get the ACR name from azd environment
-        ACR_NAME=$(azd env get-value AZURE_CONTAINER_REGISTRY_NAME)
-        if [ -n "$ACR_NAME" ]; then
-          echo "Building image using ACR Tasks (no local Docker required)..."
-          az acr build --registry $ACR_NAME --image zavastorefront:$(azd env get-value AZURE_ENV_NAME) ./src
-        fi
-
-# Pipeline configuration for CI/CD
-pipeline:
-  provider: github
