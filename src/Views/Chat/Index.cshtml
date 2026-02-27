@@ -1,0 +1,101 @@
+@{
+    ViewData["Title"] = "Chat";
+}
+
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0"><i class="bi bi-chat-dots"></i> Zava Assistant</h4>
+                </div>
+                <div class="card-body">
+                    <div id="chatHistory" class="border rounded p-3 mb-3" style="height: 400px; overflow-y: auto; background-color: #f8f9fa;">
+                        <div class="text-muted text-center">
+                            <p>Welcome to Zava Chat! Ask me anything about our products.</p>
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="userMessage" class="form-control" placeholder="Type your message..." />
+                        <button id="sendButton" class="btn btn-primary" type="button">
+                            <i class="bi bi-send"></i> Send
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const chatHistory = document.getElementById('chatHistory');
+            const userMessage = document.getElementById('userMessage');
+            const sendButton = document.getElementById('sendButton');
+
+            function addMessage(content, isUser) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `mb-2 p-2 rounded ${isUser ? 'bg-primary text-white ms-auto' : 'bg-white border'}`;
+                messageDiv.style.maxWidth = '80%';
+                messageDiv.style.width = 'fit-content';
+                messageDiv.style.marginLeft = isUser ? 'auto' : '0';
+                messageDiv.textContent = content;
+                chatHistory.appendChild(messageDiv);
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            }
+
+            function addLoadingIndicator() {
+                const loadingDiv = document.createElement('div');
+                loadingDiv.id = 'loadingIndicator';
+                loadingDiv.className = 'mb-2 p-2';
+                loadingDiv.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Thinking...';
+                chatHistory.appendChild(loadingDiv);
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            }
+
+            function removeLoadingIndicator() {
+                const loading = document.getElementById('loadingIndicator');
+                if (loading) loading.remove();
+            }
+
+            async function sendMessage() {
+                const message = userMessage.value.trim();
+                if (!message) return;
+
+                addMessage(message, true);
+                userMessage.value = '';
+                sendButton.disabled = true;
+                addLoadingIndicator();
+
+                try {
+                    const response = await fetch('/Chat/SendMessage', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: message })
+                    });
+
+                    const data = await response.json();
+                    removeLoadingIndicator();
+
+                    if (data.success) {
+                        addMessage(data.response, false);
+                    } else {
+                        addMessage('Error: ' + (data.error || 'Something went wrong'), false);
+                    }
+                } catch (error) {
+                    removeLoadingIndicator();
+                    addMessage('Error: Could not connect to the server', false);
+                }
+
+                sendButton.disabled = false;
+                userMessage.focus();
+            }
+
+            sendButton.addEventListener('click', sendMessage);
+            userMessage.addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') sendMessage();
+            });
+        });
+    </script>
+}
